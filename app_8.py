@@ -1,3 +1,4 @@
+import os
 from flask import Flask, request, jsonify
 import numpy as np
 from tensorflow.keras.models import load_model
@@ -6,7 +7,7 @@ import io
 
 app = Flask(__name__)
 
-# Chargez votre modèle pré-entraîné
+# Load your pre-trained model
 model = load_model('segmentation_model.h5')  
 
 @app.route('/')
@@ -17,27 +18,27 @@ def home():
 def predict():
     if 'image' not in request.files:
         return jsonify({'error': 'Aucune image fournie.'}), 400
-    
+
     file = request.files['image']
-    
-    # Vérifier le type de fichier
+
+    # Check file type
     if not file.filename.endswith(('png', 'jpg', 'jpeg')):
         return jsonify({'error': 'Type de fichier non valide. Seules les images PNG et JPEG sont acceptées.'}), 400
-    
+
     try:
-        # Charger l'image
+        # Load the image
         img = Image.open(io.BytesIO(file.read()))
-        img = img.resize((256, 256))  # Ajustez la taille selon votre modèle
-        img_array = np.array(img) / 255.0  # Normaliser l'image
-        img_array = np.expand_dims(img_array, axis=0)  # Ajouter la dimension de lot
+        img = img.resize((256, 256))  # Adjust size according to your model
+        img_array = np.array(img) / 255.0  # Normalize the image
+        img_array = np.expand_dims(img_array, axis=0)  # Add batch dimension
 
-        # Faire la prédiction
+        # Make the prediction
         pred_mask = model.predict(img_array)
-        pred_mask = np.argmax(pred_mask, axis=-1).reshape(256, 256)  # Ajuster la forme
+        pred_mask = np.argmax(pred_mask, axis=-1).reshape(256, 256)  # Adjust shape
 
-        # Retourner le masque prédit sous forme de liste
+        # Return the predicted mask as a list
         response = {
-            'predicted_mask': pred_mask.tolist()  # Convertir en liste pour le JSON
+            'predicted_mask': pred_mask.tolist()  # Convert to list for JSON
         }
         
         return jsonify(response)
@@ -46,4 +47,5 @@ def predict():
         return jsonify({'error': 'Erreur lors de la prédiction.'}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get('PORT', 5001))  # Default to 5001 for local development
+    app.run(host='0.0.0.0', port=port, debug=True)  # Bind to the assigned port
