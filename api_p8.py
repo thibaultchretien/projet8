@@ -1,53 +1,53 @@
-from flask import Flask, request, jsonify
-from flask_cors import CORS  # Pour gérer les CORS
+import os
 import numpy as np
+from flask import Flask, request, jsonify
 from tensorflow.keras.models import load_model
 from PIL import Image
 import io
-import os
+import base64
 
 app = Flask(__name__)
-CORS(app)  # Activer CORS
 
-# Chargez votre modèle pré-entraîné
-model = load_model('segmentation_model.h5')
-
-@app.route('/')
-def home():
-    return "Test de l'API local pour le projet 8"
+# Charger le modèle
+model = load_model('model_unet.h5')
 
 @app.route('/predict', methods=['POST'])
 def predict():
-    if 'image' not in request.files:
-        return jsonify({'error': 'Aucune image fournie.'}), 400
-    
-    file = request.files['image']
-    
-    # Vérifier le type de fichier
-    if not file.filename.endswith(('png', 'jpg', 'jpeg')):
-        return jsonify({'error': 'Type de fichier non valide. Seules les images PNG et JPEG sont acceptées.'}), 400
-    
     try:
-        # Charger l'image
-        img = Image.open(io.BytesIO(file.read()))
-        img = img.resize((256, 256))  # Ajustez la taille selon votre modèle
-        img_array = np.array(img) / 255.0  # Normaliser l'image
-        img_array = np.expand_dims(img_array, axis=0)  # Ajouter la dimension de lot
+        # Récupérer l'image envoyée en base64
+        data = request.get_json()
+        img_data = data.get('image')
 
-        # Faire la prédiction
-        pred_mask = model.predict(img_array)
-        pred_mask = np.argmax(pred_mask, axis=-1).reshape(256, 256)  # Ajuster la forme
+        if not img_data:
+            return jsonify({'error': 'No image provided'}), 400
 
-        # Retourner le masque prédit sous forme de liste
-        response = {
-            'predicted_mask': pred_mask.tolist()  # Convertir en liste pour le JSON
-        }
-        
-        return jsonify(response)
+        # Décoder l'image de base64
+        img_data = img_data.split(',')[1]
+        img_bytes = base64.b64decode(img_data)
+
+        # Ouvrir l'image et la convertir en format compatible avec le modèle
+        img = Image.open(io.BytesIO(img_bytes))
+        img = img.resize((256, 256))  # Redimensionner l'image à la taille d'entrée du modèle
+        img = np.array(img) / 255.0  # Normalisation des pixels
+        img = np.expand_dims(img, axis=0)  # Ajouter la dimension du batch
+
+        # Prédiction
+        prediction = model.predict(img)
+        mask = prediction[0]  # Supposer que la sortie est un masque de même taille que l'image
+
+        # Convertir le masque en image pour l'envoyer au client
+        mask = (mask * 255).astype(np.uint8)
+        mask_img = Image.fromarray(mask)
+
+        # Convertir le masque en base64 pour le renvoyer au client
+        buffered = io.BytesIO()
+        mask_img.save(buffered, format="PNG")
+        mask_base64 = base64.b64encode(buffered.getvalue()).decode('utf-8')
+
+        return jsonify({'mask': mask_base64})
 
     except Exception as e:
-        return jsonify({'error': 'Erreur lors de la prédiction.'}), 500
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
-    # Utiliser le port donné par Heroku
-    app.run(debug=True, port=int(os.environ.get('PORT', 5000)))
+    app.run(debug=True, host='0.0.0.0', port=5050)
