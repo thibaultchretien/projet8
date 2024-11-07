@@ -1,1 +1,1 @@
-web: python api_p8.py
+web: gunicorn api_p8:app
